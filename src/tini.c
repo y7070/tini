@@ -543,14 +543,15 @@ int reap_zombies(const pid_t child_pid, int* const child_exitcode_ptr) {
 	int current_status;
 
 	while (1) {
-		current_pid = waitpid(-1, &current_status, WNOHANG);
+		current_pid = waitpid(-child_pid, &current_status, WNOHANG);
+		PRINT_DEBUG("current pid: '%i'", current_pid);
 
 		switch (current_pid) {
 
 			case -1:
 				if (errno == ECHILD) {
 					PRINT_TRACE("No child to wait");
-					break;
+					return 1;
 				}
 				PRINT_FATAL("Error while waiting for pids: '%s'", strerror(errno));
 				return 1;
@@ -600,6 +601,7 @@ int reap_zombies(const pid_t child_pid, int* const child_exitcode_ptr) {
 		break;
 	}
 
+	PRINT_DEBUG("Leaving reaping");
 	return 0;
 }
 
@@ -643,7 +645,7 @@ int main(int argc, char *argv[]) {
 	if (parent_death_signal && prctl(PR_SET_PDEATHSIG, parent_death_signal)) {
 		PRINT_FATAL("Failed to set up parent death signal");
 		return 1;
-	 }
+	}
 
 #if HAS_SUBREAPER
 	/* If available and requested, register as a subreaper */
@@ -669,11 +671,14 @@ int main(int argc, char *argv[]) {
 		}
 
 		/* Now, reap zombies */
-		if (reap_zombies(child_pid, &child_exitcode)) {
-			return 1;
+		if (!reap_zombies(child_pid, &child_exitcode)) {
+			// if still have child, continue
+			continue;
 		}
 
-		if (child_exitcode != -1) {
+		if (child_exitcode == -1) {
+			return 1;
+		} else {
 			PRINT_TRACE("Exiting: child has exited");
 			return child_exitcode;
 		}
